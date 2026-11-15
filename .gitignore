@@ -1,0 +1,7 @@
+out/
+out2/
+node_modules/
+transcripts.tar.gz
+*.log
+.DS_Store
+payout-keypair.json
