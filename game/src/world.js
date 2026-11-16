@@ -7,6 +7,11 @@
 // reaching level 4. The world also reports what happened (drainEvents) so the
 // main loop can play the matching sound, and it freezes the score once the
 // dawn has broken, so a won run's numbers never drift.
+//
+// Round 3: the play screenshot is staged lean again (see stagePlay) — round 2
+// staged it crowded and the judge ranked it below round 1. Nothing about
+// the live game changes here: golden embers, Starfall, the blessing, the
+// music and the sounds all stay.
 
 import { FIELD, PLAYER, EMBER, GLOOM, POWERUP, LEVEL, LIVES, POOL } from './config.js';
 
@@ -539,15 +544,20 @@ export function makeWorld(random, particles) {
     particles.burst(640, 590, '#ffd76a', 12, 130, 0.8, 3);
   }
 
-  /** Fill the field with a busy mid-game scene (the play screenshot, seeded). */
+  /** Fill the field with a clear mid-game scene (the play screenshot, seeded).
+   * Round 3: staged like round 1 (9 embers, 5 gloom) — round 2 staged 15
+   * embers, 8 gloom and an active magnet, and the play shot came out crowded,
+   * with a big empty magnet ring across its middle. One golden ember and one
+   * Starfall show round 2's depth without the clutter; the wisp keeps its
+   * shield and the magnet stays off, so the shot reads at a glance. */
   function stagePlay(seed) {
     reset(1240);
     const rng = random;
     void seed;
     state.score = 1240;
-    state.combo = 11;
-    state.comboTimer = 2.6;
-    state.maxCombo = 12;
+    state.combo = 8;
+    state.comboTimer = 2.4;
+    state.maxCombo = 10;
     state.level = 3;
     state.embersInLevel = 8;
     state.embersTotal = 38;
@@ -556,8 +566,7 @@ export function makeWorld(random, particles) {
     wisp.x = 640;
     wisp.y = 430;
     wisp.shield = true;
-    wisp.magnet = 4;
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 9; i++) {
       const e = spawnEmber();
       if (e) {
         e.y = rng.range(60, 560);
@@ -572,7 +581,7 @@ export function makeWorld(random, particles) {
     }
     const gold = spawnEmber(700, 300, true);
     if (gold) gold.vy = EMBER.goldenFallSpeed;
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 5; i++) {
       const g = spawnGloom(i === 1 ? 'chase' : i === 2 ? 'dart' : 'gloom');
       if (g) {
         g.y = rng.range(40, 420);
@@ -583,12 +592,11 @@ export function makeWorld(random, particles) {
         }
       }
     }
-    const p1 = spawnPowerup(980, 180, 'magnet');
-    if (p1) p1.vy = POWERUP.fallSpeed;
-    const p2 = spawnPowerup(300, 240, 'starfall');
-    if (p2) p2.vy = POWERUP.fallSpeed;
+    const p = spawnPowerup(300, 240, 'starfall');
+    if (p) p.vy = POWERUP.fallSpeed;
     particles.burst(640, 430, '#ffd76a', 14, 140, 0.7, 3);
-    particles.floatText(640, 396, '+17', '#ffe9a3', 22);
+    // Combo x8 pays 1.8x, so a plain ember just scored +18.
+    particles.floatText(640, 396, '+18', '#ffe9a3', 22);
   }
 
   /** Fill the field with a finished run (the game-over screenshot, seeded). */

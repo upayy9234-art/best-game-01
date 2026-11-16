@@ -2,7 +2,7 @@
 // title / pause / game-over / victory screens. Nothing here changes the world;
 // it only reads it. The sky itself (night, moon, dawn) lives in sky.js.
 
-import { FIELD, PALETTE, FONT, EMBER, POWERUP, LEVEL } from './config.js';
+import { FIELD, PALETTE, FONT, EMBER, LEVEL } from './config.js';
 import { makeSky } from './sky.js';
 
 export function makeRenderer(canvas) {
@@ -72,15 +72,11 @@ export function makeRenderer(canvas) {
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
-    if (wisp.magnet > 0) {
-      ctx.strokeStyle = PALETTE.magnet;
-      ctx.globalAlpha = 0.3;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(wisp.x, wisp.y, POWERUP.magnetRadius * 0.55, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
+    // No range ring for the magnet: round 2 drew one (radius 143) whenever
+    // the magnet was on, and in the play screenshot it read as a big empty
+    // circle across the middle of the field. The HUD's MAGNET timer already
+    // says the effect is on, and the embers visibly streaming toward the
+    // wisp show the pull — the ring added nothing but clutter.
     if (blink) ctx.globalAlpha = 1;
   }
 

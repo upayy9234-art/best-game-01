@@ -13,10 +13,22 @@ const STAR_LAYERS = [
   { count: 24, size: 2.6, speed: 20, alpha: 1 },
 ];
 
+// The hill ridge, the same two quadratic curves paintHills draws, so the
+// lantern lights can sit on it instead of floating above it: round 2's fixed
+// spots hovered up to 10 px above the ridge and read as embers lying on the
+// ground in the play shot. Round 3 puts each lantern 5 px below the ridge
+// line, half-sunk into the hill, and shrinks its glow.
+function hillY(x) {
+  if (x <= 640) {
+    const t = x / 640;
+    return (1 - t) * (1 - t) * 648 + 2 * (1 - t) * t * 596 + t * t * 640;
+  }
+  const t = (x - 640) / 640;
+  return (1 - t) * (1 - t) * 640 + 2 * (1 - t) * t * 684 + t * t * 622;
+}
+
 // Warm lantern lights dotted along the hill ridge.
-const LANTERNS = [
-  [150, 638], [320, 610], [520, 630], [700, 640], [900, 658], [1080, 646], [1220, 628],
-];
+const LANTERNS = [150, 320, 520, 700, 900, 1080, 1220].map((x) => [x, hillY(x) + 5]);
 
 function paintHills(s, fill) {
   s.fillStyle = fill;
@@ -74,18 +86,18 @@ export function makeSky() {
     }
     s.globalAlpha = 1;
     paintHills(s, '#0d1126');
-    // Lantern lights on the ridge.
+    // Lantern lights on the ridge: small, dim, half-sunk into the hill.
     for (const [x, y] of LANTERNS) {
-      const g = s.createRadialGradient(x, y, 0, x, y, 14);
-      g.addColorStop(0, 'rgba(255, 214, 120, 0.85)');
+      const g = s.createRadialGradient(x, y, 0, x, y, 9);
+      g.addColorStop(0, 'rgba(255, 214, 120, 0.7)');
       g.addColorStop(1, 'rgba(255, 214, 120, 0)');
       s.fillStyle = g;
       s.beginPath();
-      s.arc(x, y, 14, 0, Math.PI * 2);
+      s.arc(x, y, 9, 0, Math.PI * 2);
       s.fill();
       s.fillStyle = '#ffe9a3';
       s.beginPath();
-      s.arc(x, y, 2.4, 0, Math.PI * 2);
+      s.arc(x, y, 2, 0, Math.PI * 2);
       s.fill();
     }
   }
