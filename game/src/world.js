@@ -1,6 +1,12 @@
 // The world: the wisp, the falling embers and gloom, the power-ups, the levels
 // and the score. Pure simulation — it knows nothing about the canvas, so the
 // same step runs in the live game and in the deterministic screenshot modes.
+//
+// Round 2: golden embers (rare, worth 5x), a fourth power-up — Starfall,
+// which clears every gloom on screen — and Dawn's Blessing, one life back on
+// reaching level 4. The world also reports what happened (drainEvents) so the
+// main loop can play the matching sound, and it freezes the score once the
+// dawn has broken, so a won run's numbers never drift.
 
 import { FIELD, PLAYER, EMBER, GLOOM, POWERUP, LEVEL, LIVES, POOL } from './config.js';
 
@@ -27,7 +33,7 @@ export function makeWorld(random, particles) {
 
   const embers = [];
   for (let i = 0; i < POOL.embers; i++) {
-    embers.push({ alive: false, x: 0, y: 0, vy: 0, sway: 0, phase: 0, radius: EMBER.radius, kind: 'ember' });
+    embers.push({ alive: false, x: 0, y: 0, vy: 0, sway: 0, phase: 0, radius: EMBER.radius, kind: 'ember', golden: false });
   }
   const gloom = [];
   for (let i = 0; i < POOL.gloom; i++) {
@@ -38,6 +44,12 @@ export function makeWorld(random, particles) {
     powerups.push({ alive: false, x: 0, y: 0, vy: 0, phase: 0, radius: POWERUP.radius, kind: 'shield' });
   }
 
+  // Sound / feedback events since the last drain, as { name, arg }.
+  const events = [];
+  function emit(name, arg) {
+    events.push({ name, arg });
+  }
+
   const state = {
     score: 0,
     best: 0,
@@ -45,11 +57,14 @@ export function makeWorld(random, particles) {
     level: 1,
     embersInLevel: 0,
     embersTotal: 0,
+    goldenTotal: 0,
     combo: 0,
     comboTimer: 0,
     maxCombo: 0,
     hits: 0,
     powerupsTaken: 0,
+    starfalls: 0,
+    blessingGiven: false,
     time: 0,
     shake: 0,
     flash: 0,
@@ -64,13 +79,17 @@ export function makeWorld(random, particles) {
     victory: false,
   };
 
-  function spawnEmber(x, y) {
+  function spawnEmber(x, y, golden = false) {
     for (const e of embers) {
       if (e.alive) continue;
       e.alive = true;
       e.x = x ?? random.range(30, FIELD.width - 30);
       e.y = y ?? -20;
-      e.vy = (EMBER.fallSpeed + random.range(-EMBER.fallJitter, EMBER.fallJitter)) * (1 + (state.level - 1) * 0.05);
+      e.golden = golden || random.chance(EMBER.goldenChance);
+      e.radius = e.golden ? EMBER.goldenRadius : EMBER.radius;
+      e.vy = e.golden
+        ? EMBER.goldenFallSpeed
+        : (EMBER.fallSpeed + random.range(-EMBER.fallJitter, EMBER.fallJitter)) * (1 + (state.level - 1) * 0.05);
       e.sway = random.range(10, EMBER.sway);
       e.phase = random.range(0, Math.PI * 2);
       return e;
@@ -102,15 +121,15 @@ export function makeWorld(random, particles) {
     return null;
   }
 
-  function spawnPowerup() {
+  function spawnPowerup(x, y, kind) {
     for (const p of powerups) {
       if (p.alive) continue;
       p.alive = true;
-      p.x = random.range(50, FIELD.width - 50);
-      p.y = -20;
+      p.x = x ?? random.range(50, FIELD.width - 50);
+      p.y = y ?? -20;
       p.vy = POWERUP.fallSpeed;
       p.phase = random.range(0, Math.PI * 2);
-      p.kind = random.pick(POWERUP_KINDS);
+      p.kind = kind ?? (random.chance(POWERUP.starfallChance) ? 'starfall' : random.pick(POWERUP_KINDS));
       return p;
     }
     return null;
@@ -120,17 +139,31 @@ export function makeWorld(random, particles) {
     return 1 + Math.min(state.combo, EMBER.comboCap) * 0.1;
   }
 
+  /** How far the run is toward the dawn: 0 at level 1, 1 when it breaks. */
+  function dawnProgress() {
+    return Math.min(1, (state.level - 1) / (LEVEL.winLevel - 1));
+  }
+
   function collectEmber(e) {
     e.alive = false;
     state.combo += 1;
     state.comboTimer = EMBER.comboWindow;
     if (state.combo > state.maxCombo) state.maxCombo = state.combo;
-    const gained = Math.round(EMBER.points * comboMultiplier());
+    const base = e.golden ? EMBER.goldenPoints : EMBER.points;
+    const gained = Math.round(base * comboMultiplier());
     state.score += gained;
     state.embersTotal += 1;
     state.embersInLevel += 1;
-    particles.burst(e.x, e.y, '#f2c94c', 10, 170, 0.55, 3);
-    particles.floatText(e.x, e.y - 14, `+${gained}`, '#ffe9a3', 17 + Math.min(state.combo, 10));
+    if (e.golden) {
+      state.goldenTotal += 1;
+      particles.burst(e.x, e.y, '#ffd76a', 18, 260, 0.8, 4);
+      particles.floatText(e.x, e.y - 14, `+${gained}`, '#fffbe0', 24 + Math.min(state.combo, 10));
+      emit('golden');
+    } else {
+      particles.burst(e.x, e.y, '#f2c94c', 10, 170, 0.55, 3);
+      particles.floatText(e.x, e.y - 14, `+${gained}`, '#ffe9a3', 17 + Math.min(state.combo, 10));
+      emit('pickup', state.combo);
+    }
     if (state.embersInLevel >= LEVEL.embersPerLevel) levelUp();
     return gained;
   }
@@ -146,7 +179,16 @@ export function makeWorld(random, particles) {
       particles.burst(wisp.x, wisp.y, '#fff6c9', 60, 320, 1.2, 4);
       return 'win';
     }
-    state.levelBannerText = `LEVEL ${state.level}`;
+    if (state.level === LEVEL.blessingLevel && !state.blessingGiven && state.lives < LIVES) {
+      state.blessingGiven = true;
+      state.lives += 1;
+      state.levelBannerText = `LEVEL ${state.level} — DAWN'S BLESSING · +1 LIFE`;
+      particles.burst(wisp.x, wisp.y, '#4fd1c5', 30, 260, 0.9, 3);
+      emit('blessing');
+    } else {
+      state.levelBannerText = `LEVEL ${state.level}`;
+    }
+    emit('level');
     return 'level';
   }
 
@@ -156,6 +198,7 @@ export function makeWorld(random, particles) {
       wisp.shield = false;
       wisp.invulnerable = PLAYER.invulnerable;
       particles.burst(wisp.x, wisp.y, '#4fd1c5', 22, 260, 0.7, 3);
+      emit('shield');
       return 'shield';
     }
     state.lives -= 1;
@@ -166,12 +209,33 @@ export function makeWorld(random, particles) {
     state.flash = 0.35;
     wisp.invulnerable = PLAYER.invulnerable;
     particles.burst(wisp.x, wisp.y, '#ff5d73', 26, 300, 0.8, 4);
+    emit('hit');
     if (state.lives <= 0) {
       state.over = true;
       if (state.score > state.best) state.best = state.score;
       return 'over';
     }
     return 'hit';
+  }
+
+  /** Starfall: every gloom on screen bursts, worth points each. */
+  function starfall() {
+    let cleared = 0;
+    for (const g of gloom) {
+      if (!g.alive) continue;
+      g.alive = false;
+      cleared++;
+      particles.burst(g.x, g.y, '#ffd76a', 12, 240, 0.7, 3);
+    }
+    if (cleared > 0) {
+      state.score += cleared * POWERUP.starfallPoints;
+      state.starfalls += 1;
+      state.flash = 0.5;
+      state.shake = 0.3;
+      particles.ring(wisp.x, wisp.y, '#ffd76a', 620, 0.8);
+      particles.floatText(wisp.x, wisp.y - 30, `STARFALL! +${cleared * POWERUP.starfallPoints}`, '#fffbe0', 26);
+    }
+    return cleared;
   }
 
   function applyPowerup(p) {
@@ -181,12 +245,18 @@ export function makeWorld(random, particles) {
     if (p.kind === 'shield') {
       wisp.shield = true;
       particles.floatText(p.x, p.y - 14, 'SHIELD!', '#4fd1c5', 20);
+      emit('powerup');
     } else if (p.kind === 'magnet') {
       wisp.magnet = POWERUP.magnetSeconds;
       particles.floatText(p.x, p.y - 14, 'MAGNET!', '#f2a0ff', 20);
-    } else {
+      emit('powerup');
+    } else if (p.kind === 'slow') {
       wisp.slow = POWERUP.slowSeconds;
       particles.floatText(p.x, p.y - 14, 'SLOW TIME!', '#7db4ff', 20);
+      emit('powerup');
+    } else {
+      starfall();
+      emit('starfall');
     }
   }
 
@@ -240,6 +310,7 @@ export function makeWorld(random, particles) {
       wisp.dashTime = PLAYER.dashTime;
       wisp.dashCooldown = PLAYER.dashCooldown;
       wisp.invulnerable = Math.max(wisp.invulnerable, PLAYER.dashTime + 0.05);
+      emit('dash');
     }
 
     if (wisp.dashTime > 0) {
@@ -322,6 +393,7 @@ export function makeWorld(random, particles) {
       e.phase += dt * 2.2;
       e.y += e.vy * slowFactor * dt;
       e.x += Math.sin(e.phase) * e.sway * dt;
+      if (e.golden && random.chance(dt * 6)) particles.sparkle(e.x, e.y, '#ffd76a');
       if (wisp.magnet > 0) {
         const d = Math.hypot(wisp.x - e.x, wisp.y - e.y);
         if (d < POWERUP.magnetRadius && d > 1) {
@@ -359,32 +431,55 @@ export function makeWorld(random, particles) {
       if (p.y > FIELD.height + 30) p.alive = false;
     }
 
-    // --- Collisions. ---
-    for (const e of embers) {
-      if (!e.alive) continue;
-      const rr = e.radius + wisp.radius;
-      if (dist2(e.x, e.y, wisp.x, wisp.y) < rr * rr) collectEmber(e);
-    }
-    for (const p of powerups) {
-      if (!p.alive) continue;
-      const rr = p.radius + wisp.radius;
-      if (dist2(p.x, p.y, wisp.x, wisp.y) < rr * rr) applyPowerup(p);
-    }
-    if (!state.over) {
-      for (const g of gloom) {
-        if (!g.alive) continue;
-        const rr = g.radius + wisp.radius - 4;
-        if (dist2(g.x, g.y, wisp.x, wisp.y) < rr * rr) {
-          g.alive = false;
-          const result = hurt();
-          if (result === 'over') return 'over';
-          break;
+    // --- Collisions. Frozen once the dawn has broken: a won run's score stays put. ---
+    if (!state.victory) {
+      for (const e of embers) {
+        if (!e.alive) continue;
+        const rr = e.radius + wisp.radius;
+        if (dist2(e.x, e.y, wisp.x, wisp.y) < rr * rr) collectEmber(e);
+      }
+      for (const p of powerups) {
+        if (!p.alive) continue;
+        const rr = p.radius + wisp.radius;
+        if (dist2(p.x, p.y, wisp.x, wisp.y) < rr * rr) applyPowerup(p);
+      }
+      if (!state.over) {
+        for (const g of gloom) {
+          if (!g.alive) continue;
+          const rr = g.radius + wisp.radius - 4;
+          if (dist2(g.x, g.y, wisp.x, wisp.y) < rr * rr) {
+            g.alive = false;
+            const result = hurt();
+            if (result === 'over') return 'over';
+            break;
+          }
         }
       }
     }
 
     particles.update(dt);
     return state.victory && state.won ? 'win' : null;
+  }
+
+  /**
+   * The title screen's ambient drift: embers fall gently behind the panel,
+   * nothing else spawns, nothing can be collected or hurt. Pure scenery.
+   */
+  function ambient(dt) {
+    state.time += dt;
+    state.emberTimer -= dt;
+    if (state.emberTimer <= 0) {
+      spawnEmber();
+      state.emberTimer = 0.55 * random.range(0.7, 1.3);
+    }
+    for (const e of embers) {
+      if (!e.alive) continue;
+      e.phase += dt * 2.2;
+      e.y += e.vy * dt;
+      e.x += Math.sin(e.phase) * e.sway * dt;
+      if (e.y > FIELD.height + 30) e.alive = false;
+    }
+    particles.update(dt);
   }
 
   function reset(best) {
@@ -394,11 +489,14 @@ export function makeWorld(random, particles) {
     state.level = 1;
     state.embersInLevel = 0;
     state.embersTotal = 0;
+    state.goldenTotal = 0;
     state.combo = 0;
     state.comboTimer = 0;
     state.maxCombo = 0;
     state.hits = 0;
     state.powerupsTaken = 0;
+    state.starfalls = 0;
+    state.blessingGiven = false;
     state.time = 0;
     state.shake = 0;
     state.flash = 0;
@@ -420,20 +518,36 @@ export function makeWorld(random, particles) {
     wisp.shield = false;
     wisp.magnet = 0;
     wisp.slow = 0;
-    for (const e of embers) e.alive = false;
+    for (const e of embers) { e.alive = false; e.golden = false; }
     for (const g of gloom) g.alive = false;
     for (const p of powerups) p.alive = false;
   }
 
-  /** Fill the field with a mid-game scene (the play screenshot, seeded). */
+  /** Fill the field with a quiet title scene (the start screenshot, seeded). */
+  function stageTitle() {
+    reset(1240);
+    state.best = 1240;
+    for (let i = 0; i < 10; i++) {
+      const e = spawnEmber();
+      if (e) {
+        e.y = random.range(40, 620);
+        e.x = random.range(60, FIELD.width - 60);
+      }
+    }
+    const gold = spawnEmber(880, 120, true);
+    if (gold) gold.vy = EMBER.goldenFallSpeed;
+    particles.burst(640, 590, '#ffd76a', 12, 130, 0.8, 3);
+  }
+
+  /** Fill the field with a busy mid-game scene (the play screenshot, seeded). */
   function stagePlay(seed) {
     reset(1240);
     const rng = random;
     void seed;
     state.score = 1240;
-    state.combo = 7;
-    state.comboTimer = 2.2;
-    state.maxCombo = 9;
+    state.combo = 11;
+    state.comboTimer = 2.6;
+    state.maxCombo = 12;
     state.level = 3;
     state.embersInLevel = 8;
     state.embersTotal = 38;
@@ -442,27 +556,39 @@ export function makeWorld(random, particles) {
     wisp.x = 640;
     wisp.y = 430;
     wisp.shield = true;
-    for (let i = 0; i < 9; i++) {
+    wisp.magnet = 4;
+    for (let i = 0; i < 14; i++) {
       const e = spawnEmber();
       if (e) {
         e.y = rng.range(60, 560);
         e.x = rng.range(60, FIELD.width - 60);
+        // Keep the staged embers off the wisp, so the settle steps below
+        // collect nothing and the shot keeps its staged numbers.
+        for (let tries = 0; tries < 5 && Math.hypot(e.x - wisp.x, e.y - wisp.y) < 110; tries++) {
+          e.y = rng.range(60, 560);
+          e.x = rng.range(60, FIELD.width - 60);
+        }
       }
     }
-    for (let i = 0; i < 5; i++) {
-      const g = spawnGloom(i === 1 ? 'chase' : 'gloom');
+    const gold = spawnEmber(700, 300, true);
+    if (gold) gold.vy = EMBER.goldenFallSpeed;
+    for (let i = 0; i < 8; i++) {
+      const g = spawnGloom(i === 1 ? 'chase' : i === 2 ? 'dart' : 'gloom');
       if (g) {
         g.y = rng.range(40, 420);
         g.x = rng.range(60, FIELD.width - 60);
+        for (let tries = 0; tries < 5 && Math.hypot(g.x - wisp.x, g.y - wisp.y) < 90; tries++) {
+          g.y = rng.range(40, 420);
+          g.x = rng.range(60, FIELD.width - 60);
+        }
       }
     }
-    const p = spawnPowerup();
-    if (p) {
-      p.y = 180;
-      p.x = 980;
-      p.kind = 'magnet';
-    }
+    const p1 = spawnPowerup(980, 180, 'magnet');
+    if (p1) p1.vy = POWERUP.fallSpeed;
+    const p2 = spawnPowerup(300, 240, 'starfall');
+    if (p2) p2.vy = POWERUP.fallSpeed;
     particles.burst(640, 430, '#ffd76a', 14, 140, 0.7, 3);
+    particles.floatText(640, 396, '+17', '#ffe9a3', 22);
   }
 
   /** Fill the field with a finished run (the game-over screenshot, seeded). */
@@ -472,6 +598,7 @@ export function makeWorld(random, particles) {
     state.best = 2870;
     state.level = 5;
     state.embersTotal = 74;
+    state.goldenTotal = 3;
     state.maxCombo = 11;
     state.hits = 3;
     state.lives = 0;
@@ -503,6 +630,7 @@ export function makeWorld(random, particles) {
     state.best = 3420;
     state.level = 8;
     state.embersTotal = 105;
+    state.goldenTotal = 6;
     state.maxCombo = 14;
     state.time = 198.2;
     state.won = true;
@@ -528,14 +656,21 @@ export function makeWorld(random, particles) {
     powerups,
     state,
     update,
+    ambient,
     reset,
+    stageTitle,
     stagePlay,
     stageEnd,
     stageWin,
     comboMultiplier,
+    dawnProgress,
+    /** The events since the last call, oldest first; the call empties the queue. */
+    drainEvents() {
+      return events.splice(0, events.length);
+    },
     /** Test/debug helpers: put one falling thing at an exact spot. */
-    spawnEmberAt(x, y) {
-      return spawnEmber(x, y);
+    spawnEmberAt(x, y, golden = false) {
+      return spawnEmber(x, y, golden);
     },
     spawnGloomAt(x, y) {
       const g = spawnGloom('gloom');
@@ -545,6 +680,12 @@ export function makeWorld(random, particles) {
         g.vy = 60;
       }
       return g;
+    },
+    spawnPowerupAt(x, y, kind) {
+      return spawnPowerup(x, y, kind);
+    },
+    spawnPowerup() {
+      return spawnPowerup();
     },
   };
 }

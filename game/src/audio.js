@@ -5,7 +5,11 @@
 
 const NOTES = {
   pickup: [880, 1174.66],
+  golden: [1318.5, 1760],
   powerup: [523.25, 659.25, 783.99],
+  shield: [1046.5, 783.99],
+  starfall: [523.25, 659.25, 783.99, 1046.5, 1318.5],
+  blessing: [783.99, 987.77, 1174.66],
   hit: [160, 110],
   dash: [320, 640],
   level: [523.25, 659.25, 783.99, 1046.5],
@@ -85,9 +89,28 @@ export function makeAudio() {
       tone(base[0] + lift, 0, 0.12);
       tone(base[1] + lift, 0.05, 0.14);
     },
+    golden() {
+      if (!ensure()) return;
+      NOTES.golden.forEach((f, i) => tone(f, i * 0.06, 0.2, 'triangle', 0.9));
+      noise(0, 0.15, 5200, 0.25);
+    },
     powerup() {
       if (!ensure()) return;
       NOTES.powerup.forEach((f, i) => tone(f, i * 0.07, 0.18, 'triangle'));
+    },
+    shield() {
+      if (!ensure()) return;
+      NOTES.shield.forEach((f, i) => tone(f, i * 0.06, 0.16, 'triangle', 0.8));
+      noise(0, 0.12, 3600, 0.3);
+    },
+    starfall() {
+      if (!ensure()) return;
+      NOTES.starfall.forEach((f, i) => tone(f, i * 0.05, 0.22, 'triangle', 0.9));
+      noise(0, 0.5, 3200, 0.6);
+    },
+    blessing() {
+      if (!ensure()) return;
+      NOTES.blessing.forEach((f, i) => tone(f, i * 0.1, 0.26, 'triangle', 0.9));
     },
     hit() {
       if (!ensure()) return;

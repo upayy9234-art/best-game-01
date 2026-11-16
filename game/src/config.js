@@ -8,7 +8,7 @@ export const FIELD = { width: 1280, height: 720 };
 export const STEP = 1 / 60;
 
 export const PLAYER = {
-  radius: 16,
+  radius: 18,
   accel: 2600,
   maxSpeed: 420,
   friction: 0.86,
@@ -22,25 +22,30 @@ export const LIVES = 3;
 
 /** One ember is worth 10 points times the combo multiplier (1 + combo * 0.1, capped). */
 export const EMBER = {
-  radius: 11,
+  radius: 12,
   fallSpeed: 55,
   fallJitter: 35,
   sway: 42,
   points: 10,
   comboWindow: 3.0,
   comboCap: 12,
-  interval: 0.85,
+  interval: 0.75,
   intervalScale: 0.94,
   minInterval: 0.34,
+  /** Chance a spawned ember is golden: worth 5x, bigger, slower, sparkling. */
+  goldenChance: 0.06,
+  goldenPoints: 50,
+  goldenRadius: 16,
+  goldenFallSpeed: 42,
 };
 
 /** Gloom orbs: touching one costs a life. */
 export const GLOOM = {
-  radius: 18,
+  radius: 19,
   fallSpeed: 95,
   fallJitter: 45,
   sway: 60,
-  interval: 1.7,
+  interval: 1.55,
   intervalScale: 0.93,
   minInterval: 0.55,
   /** Level at which chasers (they drift toward the wisp) start appearing. */
@@ -59,13 +64,23 @@ export const POWERUP = {
   magnetSeconds: 6,
   slowSeconds: 5,
   magnetRadius: 260,
+  /** Chance a spawned power-up is a Starfall (clears every gloom on screen). */
+  starfallChance: 0.12,
+  /** Points per gloom cleared by a Starfall. */
+  starfallPoints: 25,
 };
 
 /** Embers gathered to finish a level; level 8 breaks the dawn (the win). */
-export const LEVEL = { embersPerLevel: 15, winLevel: 8, max: 12 };
+export const LEVEL = {
+  embersPerLevel: 15,
+  winLevel: 8,
+  max: 12,
+  /** Reaching this level with a life missing grants one back (once per run). */
+  blessingLevel: 4,
+};
 
 /** How many of each thing can exist at once; pools are allocated once, at boot. */
-export const POOL = { embers: 48, gloom: 40, powerups: 6, particles: 320, texts: 24 };
+export const POOL = { embers: 56, gloom: 44, powerups: 6, particles: 384, texts: 24, rings: 8 };
 
 export const PALETTE = {
   backdropTop: '#0a0e24',
@@ -73,11 +88,14 @@ export const PALETTE = {
   nebulaA: '#2b1a5e',
   nebulaB: '#0e2a4a',
   star: '#dfe8ff',
+  moon: '#f4ead0',
   wispCore: '#fff6c9',
   wispGlow: '#f2c94c',
   wispTrail: '#ffd76a',
   ember: '#f2c94c',
   emberCore: '#fff3b0',
+  golden: '#ffd76a',
+  goldenCore: '#fffbe0',
   gloom: '#241a3d',
   gloomRim: '#b04a8a',
   gloomEye: '#ff5d73',
@@ -86,10 +104,15 @@ export const PALETTE = {
   shield: '#4fd1c5',
   magnet: '#f2a0ff',
   slow: '#7db4ff',
+  starfall: '#ffd76a',
   text: '#eef1f5',
   muted: '#9aa3b8',
   danger: '#ff5d73',
   panel: 'rgba(10, 14, 36, 0.72)',
+  dawnTop: '#2c2350',
+  dawnMid: '#c96a5e',
+  dawnBottom: '#ffd98a',
+  dawnSun: '#ffe9a3',
 };
 
 export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';

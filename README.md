@@ -6,14 +6,20 @@
 
 **Lumen Drift — Keeper of the Last Light.** A complete 2D arcade game in plain
 HTML5 canvas: you are the last lantern wisp in a night that is swallowing
-every light. Gather falling embers to build a combo, dodge the gloom orbs (and
-the chasers and darts that appear as you level up), catch Shield / Magnet /
-Slow-Time power-ups, dash through danger, and reach level 8 to break the dawn
-— then keep drifting in endless mode. Title, pause, game-over and victory
-screens, a live HUD (score, best, lives, level progress, combo meter, dash
-cooldown), synthesised WebAudio sound effects (no audio files), and a best
-score kept in your browser. No libraries, no network requests, no build step:
-just static files.
+every light. Gather falling embers to build a combo, chase the rare golden
+embers worth 5x, dodge the gloom orbs (and the chasers and darts that appear as
+you level up), catch Shield / Magnet / Slow-Time / Starfall power-ups — Starfall
+clears the whole sky of gloom — dash through danger, and reach level 8 to break
+the dawn, then keep drifting in endless mode. The sky itself brightens as you
+climb: stars fade, the moon sets, and the sun rises over the lantern-lit hills
+when the dawn breaks. Reaching level 4 with a life missing earns one back
+(Dawn's Blessing).
+
+Title, pause, game-over and victory screens, a live HUD (score, best, lives,
+level progress with a DAWN % meter, combo meter, golden count, dash cooldown),
+synthesised WebAudio sound effects plus a gentle procedural pentatonic melody
+(no audio files), and a best score kept in your browser. No libraries, no
+network requests, no build step: just static files.
 
 ## Run it
 

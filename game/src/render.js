@@ -1,71 +1,13 @@
 // All drawing: the night sky, the wisp, the falling things, the HUD and the
 // title / pause / game-over / victory screens. Nothing here changes the world;
-// it only reads it.
+// it only reads it. The sky itself (night, moon, dawn) lives in sky.js.
 
 import { FIELD, PALETTE, FONT, EMBER, POWERUP, LEVEL } from './config.js';
-import { makeRandom } from './random.js';
-
-const STAR_LAYERS = [
-  { count: 90, size: 1.2, speed: 6, alpha: 0.5 },
-  { count: 50, size: 1.8, speed: 12, alpha: 0.75 },
-  { count: 24, size: 2.6, speed: 20, alpha: 1 },
-];
+import { makeSky } from './sky.js';
 
 export function makeRenderer(canvas) {
   const ctx = canvas.getContext('2d');
-  const stars = [];
-  {
-    const rng = makeRandom(20261115);
-    for (const layer of STAR_LAYERS) {
-      for (let i = 0; i < layer.count; i++) {
-        stars.push({
-          x: rng.range(0, FIELD.width),
-          y: rng.range(0, FIELD.height),
-          size: layer.size * rng.range(0.7, 1.3),
-          speed: layer.speed,
-          alpha: layer.alpha * rng.range(0.6, 1),
-          twinkle: rng.range(0, Math.PI * 2),
-        });
-      }
-    }
-  }
-
-  // The nebula is painted once to an offscreen canvas; every frame blits it.
-  const sky = document.createElement('canvas');
-  sky.width = FIELD.width;
-  sky.height = FIELD.height;
-  {
-    const s = sky.getContext('2d');
-    const grad = s.createLinearGradient(0, 0, 0, FIELD.height);
-    grad.addColorStop(0, PALETTE.backdropTop);
-    grad.addColorStop(1, PALETTE.backdropBottom);
-    s.fillStyle = grad;
-    s.fillRect(0, 0, FIELD.width, FIELD.height);
-    const blobs = [
-      [220, 150, 320, PALETTE.nebulaA, 0.5],
-      [1050, 220, 360, PALETTE.nebulaB, 0.45],
-      [640, 620, 420, PALETTE.nebulaA, 0.35],
-    ];
-    for (const [x, y, r, color, alpha] of blobs) {
-      const g = s.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, color);
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      s.globalAlpha = alpha;
-      s.fillStyle = g;
-      s.fillRect(x - r, y - r, r * 2, r * 2);
-    }
-    s.globalAlpha = 1;
-    // A low ridge of hills grounds the sky.
-    s.fillStyle = '#0d1126';
-    s.beginPath();
-    s.moveTo(0, FIELD.height);
-    s.lineTo(0, 648);
-    s.quadraticCurveTo(320, 596, 640, 640);
-    s.quadraticCurveTo(960, 684, 1280, 622);
-    s.lineTo(1280, FIELD.height);
-    s.closePath();
-    s.fill();
-  }
+  const sky = makeSky();
 
   function glowCircle(x, y, radius, core, halo, haloRadius) {
     const g = ctx.createRadialGradient(x, y, 0, x, y, haloRadius);
@@ -81,16 +23,10 @@ export function makeRenderer(canvas) {
     ctx.fill();
   }
 
-  function drawBackground(time) {
-    ctx.drawImage(sky, 0, 0);
-    for (const st of stars) {
-      const y = (st.y + time * st.speed) % FIELD.height;
-      const tw = 0.75 + 0.25 * Math.sin(time * 1.7 + st.twinkle);
-      ctx.globalAlpha = st.alpha * tw;
-      ctx.fillStyle = PALETTE.star;
-      ctx.fillRect(st.x, y, st.size, st.size);
-    }
-    ctx.globalAlpha = 1;
+  /** How much dawn shows: full on the victory screen, a little as levels rise. */
+  function dawnAmount(world, mode) {
+    if (mode === 'victory' || world.state.victory) return 1;
+    return world.dawnProgress() * 0.3;
   }
 
   function drawWisp(wisp, time) {
@@ -150,6 +86,24 @@ export function makeRenderer(canvas) {
 
   function drawEmber(e, time) {
     const bob = Math.sin(e.phase) * 2;
+    if (e.golden) {
+      // A golden ember: bigger, brighter, with four sparkle rays.
+      const flicker = 0.9 + 0.1 * Math.sin(time * 8 + e.phase);
+      ctx.globalAlpha = flicker;
+      glowCircle(e.x, e.y + bob, e.radius * 0.6, PALETTE.goldenCore, 'rgba(255, 215, 106, 0.75)', e.radius * 2.6);
+      const rot = time * 0.8 + e.phase;
+      ctx.strokeStyle = 'rgba(255, 251, 224, 0.9)';
+      ctx.lineWidth = 1.8;
+      for (let i = 0; i < 4; i++) {
+        const a = rot + (i * Math.PI) / 2;
+        ctx.beginPath();
+        ctx.moveTo(e.x + Math.cos(a) * (e.radius + 3), e.y + bob + Math.sin(a) * (e.radius + 3));
+        ctx.lineTo(e.x + Math.cos(a) * (e.radius + 11), e.y + bob + Math.sin(a) * (e.radius + 11));
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
     const flicker = 0.85 + 0.15 * Math.sin(time * 6 + e.phase);
     ctx.globalAlpha = flicker;
     glowCircle(e.x, e.y + bob, e.radius * 0.55, PALETTE.emberCore, 'rgba(242, 201, 76, 0.5)', e.radius * 2.2);
@@ -159,6 +113,16 @@ export function makeRenderer(canvas) {
   function drawGloom(g, time) {
     const wobble = Math.sin(g.phase) * 2;
     const rim = g.dart ? PALETTE.dartRim : g.chase ? PALETTE.chaserRim : PALETTE.gloomRim;
+    // A dart leaves a short streak behind it.
+    if (g.dart) {
+      ctx.strokeStyle = 'rgba(255, 122, 60, 0.4)';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(g.x, g.y + wobble - 26);
+      ctx.lineTo(g.x, g.y + wobble - 6);
+      ctx.stroke();
+    }
     ctx.fillStyle = PALETTE.gloom;
     ctx.beginPath();
     ctx.arc(g.x, g.y + wobble, g.radius, 0, Math.PI * 2);
@@ -185,14 +149,24 @@ export function makeRenderer(canvas) {
   }
 
   function drawPowerup(p, time) {
-    const color = p.kind === 'shield' ? PALETTE.shield : p.kind === 'magnet' ? PALETTE.magnet : PALETTE.slow;
+    const color =
+      p.kind === 'shield' ? PALETTE.shield
+      : p.kind === 'magnet' ? PALETTE.magnet
+      : p.kind === 'slow' ? PALETTE.slow
+      : PALETTE.starfall;
     const bob = Math.sin(p.phase) * 3;
-    glowCircle(p.x, p.y + bob, p.radius * 0.6, '#ffffff', color, p.radius * 2.4);
+    const big = p.kind === 'starfall';
+    glowCircle(p.x, p.y + bob, p.radius * (big ? 0.75 : 0.6), '#ffffff', color, p.radius * (big ? 3 : 2.4));
     ctx.fillStyle = '#0a0e24';
-    ctx.font = `bold ${p.kind === 'slow' ? 13 : 15}px ${FONT}`;
+    ctx.font = `bold ${p.kind === 'slow' ? 13 : big ? 20 : 15}px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(p.kind === 'shield' ? 'S' : p.kind === 'magnet' ? 'M' : 'T', p.x, p.y + bob + 0.5);
+    const letter =
+      p.kind === 'shield' ? 'S'
+      : p.kind === 'magnet' ? 'M'
+      : p.kind === 'slow' ? 'T'
+      : '★';
+    ctx.fillText(letter, p.x, p.y + bob + 0.5);
   }
 
   function heart(x, y, size, filled) {
@@ -226,13 +200,14 @@ export function makeRenderer(canvas) {
     ctx.fillStyle = PALETTE.muted;
     ctx.font = `600 13px ${FONT}`;
     ctx.fillText(`BEST ${Math.max(s.best, s.score)}`, 24, 88);
-    // Level progress, top centre.
+    // Level progress, top centre — with the dawn the run is heading for.
     const barW = 260;
     const barX = FIELD.width / 2 - barW / 2;
+    const dawnPct = Math.round(world.dawnProgress() * 100);
     ctx.textAlign = 'center';
     ctx.fillStyle = PALETTE.muted;
     ctx.font = `600 13px ${FONT}`;
-    ctx.fillText(`LEVEL ${s.level}`, FIELD.width / 2, 30);
+    ctx.fillText(`LEVEL ${s.level}  ·  DAWN ${dawnPct}%`, FIELD.width / 2, 30);
     ctx.fillStyle = 'rgba(255,255,255,0.14)';
     ctx.fillRect(barX, 38, barW, 8);
     ctx.fillStyle = PALETTE.ember;
@@ -259,6 +234,13 @@ export function makeRenderer(canvas) {
       ctx.fillRect(24, 126, 150, 6);
       ctx.fillStyle = '#ffe9a3';
       ctx.fillRect(24, 126, 150 * (s.comboTimer / EMBER.comboWindow), 6);
+    }
+    // Golden embers caught, under the combo.
+    if (s.goldenTotal > 0) {
+      ctx.textAlign = 'left';
+      ctx.fillStyle = PALETTE.golden;
+      ctx.font = `700 15px ${FONT}`;
+      ctx.fillText(`★ GOLDEN x${s.goldenTotal}`, 24, s.combo >= 2 ? 156 : 118);
     }
     // Active effects + dash cooldown, bottom left.
     let line = 692;
@@ -296,7 +278,7 @@ export function makeRenderer(canvas) {
       ctx.globalAlpha = Math.min(1, s.levelBanner);
       ctx.textAlign = 'center';
       ctx.fillStyle = '#fff6c9';
-      ctx.font = `800 44px ${FONT}`;
+      ctx.font = `800 40px ${FONT}`;
       ctx.fillText(s.levelBannerText, FIELD.width / 2, 300);
       ctx.globalAlpha = 1;
     }
@@ -329,20 +311,23 @@ export function makeRenderer(canvas) {
     ctx.fillText('The night is swallowing every light. You are the last wisp.', FIELD.width / 2, 292);
     ctx.fillText('Gather the falling embers. Dodge the gloom. Reach level 8', FIELD.width / 2, 318);
     ctx.fillText('and break the dawn.', FIELD.width / 2, 344);
+    ctx.fillStyle = PALETTE.golden;
+    ctx.font = `600 15px ${FONT}`;
+    ctx.fillText('Golden embers are worth 5x  ·  Starfall clears the whole sky', FIELD.width / 2, 376);
     ctx.fillStyle = PALETTE.muted;
     ctx.font = `500 15px ${FONT}`;
-    ctx.fillText('Move: WASD / arrows or hold the mouse  ·  Dash: SPACE / right-click', FIELD.width / 2, 392);
-    ctx.fillText('Shield, Magnet and Slow-Time drift down — catch them  ·  P pause  ·  M mute', FIELD.width / 2, 416);
+    ctx.fillText('Move: WASD / arrows or hold the mouse  ·  Dash: SPACE / right-click', FIELD.width / 2, 408);
+    ctx.fillText('Shield, Magnet, Slow-Time and Starfall drift down — catch them  ·  P pause  ·  M mute', FIELD.width / 2, 432);
     const pulse = 0.7 + 0.3 * Math.sin(time * 3);
     ctx.globalAlpha = pulse;
     ctx.fillStyle = '#fff6c9';
     ctx.font = `700 22px ${FONT}`;
-    ctx.fillText('Press ENTER or click to begin', FIELD.width / 2, 470);
+    ctx.fillText('Press ENTER or click to begin', FIELD.width / 2, 486);
     ctx.globalAlpha = 1;
     if (s.best > 0) {
       ctx.fillStyle = PALETTE.muted;
       ctx.font = `600 15px ${FONT}`;
-      ctx.fillText(`Best score: ${s.best}`, FIELD.width / 2, 512);
+      ctx.fillText(`Best score: ${s.best}`, FIELD.width / 2, 524);
     }
     void world;
   }
@@ -388,8 +373,6 @@ export function makeRenderer(canvas) {
 
   function drawVictory(world) {
     const s = world.state;
-    ctx.fillStyle = 'rgba(255, 214, 120, 0.10)';
-    ctx.fillRect(0, 0, FIELD.width, FIELD.height);
     panel(FIELD.width / 2 - 320, 140, 640, 420);
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fff6c9';
@@ -406,7 +389,7 @@ export function makeRenderer(canvas) {
     ctx.fillText('SCORE', FIELD.width / 2, 358);
     ctx.fillStyle = PALETTE.text;
     ctx.font = `500 17px ${FONT}`;
-    ctx.fillText(`${s.embersTotal} embers   ·   Best combo x${s.maxCombo}   ·   ${Math.floor(s.time)}s of drift`, FIELD.width / 2, 402);
+    ctx.fillText(`${s.embersTotal} embers   ·   ${s.goldenTotal} golden   ·   Best combo x${s.maxCombo}   ·   ${Math.floor(s.time)}s of drift`, FIELD.width / 2, 402);
     ctx.fillStyle = '#fff6c9';
     ctx.font = `700 20px ${FONT}`;
     ctx.fillText('Press C to keep drifting  ·  R to play again', FIELD.width / 2, 472);
@@ -419,7 +402,7 @@ export function makeRenderer(canvas) {
       const mag = shake * 14;
       ctx.translate((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag);
     }
-    drawBackground(world.state.time);
+    sky.draw(ctx, world.state.time, dawnAmount(world, mode));
     for (const e of world.embers) if (e.alive) drawEmber(e, time);
     for (const p of world.powerups) if (p.alive) drawPowerup(p, time);
     for (const g of world.gloom) if (g.alive) drawGloom(g, time);
@@ -429,6 +412,16 @@ export function makeRenderer(canvas) {
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size * (p.life / p.maxLife), 0, Math.PI * 2);
       ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    world.particles.forEachRing((r) => {
+      const done = 1 - r.life / r.maxLife;
+      ctx.globalAlpha = Math.max(0, r.life / r.maxLife) * 0.9;
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = 4 * (1 - done) + 1;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, r.maxRadius * done, 0, Math.PI * 2);
+      ctx.stroke();
     });
     ctx.globalAlpha = 1;
     drawWisp(world.wisp, time);

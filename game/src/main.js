@@ -1,10 +1,13 @@
 // Lumen Drift — entry point. Owns the canvas, the fixed-step loop, the state
 // machine (title → playing ⇄ paused → game over / victory) and the ?shot=
 // modes the screenshots are taken in. The world itself lives in world.js.
+// It also drains the world's sound events each step (round 1 wired only a few
+// of the sounds) and runs the title screen's ambient ember drift.
 
 import { FIELD, STEP, BEST_KEY } from './config.js';
 import { makeRandom, liveRandom } from './random.js';
 import { makeAudio } from './audio.js';
+import { makeMusic } from './music.js';
 import { makeInput } from './input.js';
 import { makeParticles } from './particles.js';
 import { makeWorld } from './world.js';
@@ -20,7 +23,8 @@ const shot = params.get('shot');
 const seed = Number(params.get('seed') || '1') || 1;
 
 const audio = makeAudio();
-const particles = makeParticles(POOL.particles, POOL.texts);
+const music = makeMusic();
+const particles = makeParticles(POOL.particles, POOL.texts, POOL.rings);
 const world = makeWorld(shot ? makeRandom(seed) : liveRandom(), particles);
 world.particles = particles;
 const renderer = makeRenderer(canvas);
@@ -58,6 +62,7 @@ function startGame() {
   world.reset(best);
   mode = 'playing';
   audio.unlock();
+  music.unlock();
   audio.play('click');
   announce('Game started. Gather embers, dodge the gloom.');
 }
@@ -82,6 +87,7 @@ function continueEndless() {
 const input = makeInput(canvas, {
   onKey(code) {
     audio.unlock();
+    music.unlock();
     if (code === 'Enter') {
       if (mode === 'title') startGame();
       else if (mode === 'gameover') startGame();
@@ -94,11 +100,13 @@ const input = makeInput(canvas, {
       togglePause();
     } else if (code === 'KeyM') {
       const muted = audio.toggleMute();
+      music.toggleMute();
       announce(muted ? 'Sound off.' : 'Sound on.');
     }
   },
   onPointerDown(_p, button) {
     audio.unlock();
+    music.unlock();
     if (button === 2) return; // Right-click dashes; it starts nothing.
     if (mode === 'title') startGame();
     else if (mode === 'gameover') startGame();
@@ -107,9 +115,15 @@ const input = makeInput(canvas, {
   },
 });
 
+/** Play every sound the world queued since the last step. */
+function drainSounds() {
+  for (const ev of world.drainEvents()) audio.play(ev.name, ev.arg);
+}
+
 function step() {
   if (mode !== 'playing' && mode !== 'victory') return;
   const result = world.update(STEP, input);
+  drainSounds();
   if (mode === 'victory') return; // The dawn drifts on; nothing else changes.
   const s = world.state;
   if (s.over) {
@@ -127,7 +141,8 @@ function step() {
     return;
   }
   // The world's own events play their sounds here, read off its state.
-  if (s.levelBanner > 0 && s.levelBannerText.startsWith('LEVEL') && !step._levelPlayed) {
+  // (A blessing banner plays its own sound, so the level fanfare skips it.)
+  if (s.levelBanner > 0 && s.levelBannerText.startsWith('LEVEL') && !s.levelBannerText.includes('BLESSING') && !step._levelPlayed) {
     step._levelPlayed = s.level;
     audio.play('level');
   }
@@ -137,7 +152,17 @@ function step() {
 function frame(now) {
   const dt = Math.min(0.1, (now - lastTime) / 1000);
   lastTime = now;
-  if (mode === 'playing' || mode === 'victory') {
+  if (shot) {
+    // A screenshot mode: the scene was settled below and stays frozen, so
+    // the shot is exactly the staged scene on every run.
+    renderer.draw(world, mode, now / 1000);
+    requestAnimationFrame(frame);
+    return;
+  }
+  if (mode === 'title') {
+    // Embers drift behind the title panel; nothing else runs.
+    world.ambient(dt);
+  } else if (mode === 'playing' || mode === 'victory') {
     accumulator += dt;
     let guard = 0;
     while (accumulator >= STEP && guard < 5) {
@@ -166,7 +191,21 @@ if (shot === 'play') {
   world.stageWin();
   mode = 'victory';
 } else {
+  world.stageTitle();
   mode = 'title';
+}
+
+// Let the staged scene settle a few fixed steps (bursts spread, embers fall
+// a little), then the frame loop above holds it frozen for the screenshot.
+// The Magnet is paused for the settle: it would otherwise pull staged
+// embers onto the wisp and change the shot's staged numbers.
+if (shot === 'play' || shot === 'win') {
+  const savedMagnet = world.wisp.magnet;
+  world.wisp.magnet = 0;
+  for (let i = 0; i < 20; i++) world.update(STEP, input);
+  world.wisp.magnet = savedMagnet;
+} else if (shot === 'start') {
+  for (let i = 0; i < 20; i++) world.ambient(STEP);
 }
 
 // A hook for automated play-testing: score, lives and mode, and a way to end
@@ -182,15 +221,26 @@ window.__lumen = {
     return world.wisp;
   },
   get embers() {
-    return world.embers.filter((e) => e.alive).map((e) => ({ x: e.x, y: e.y }));
+    return world.embers.filter((e) => e.alive).map((e) => ({ x: e.x, y: e.y, golden: e.golden }));
   },
   get gloom() {
-    return world.gloom.filter((g) => g.alive).map((g) => ({ x: g.x, y: g.y }));
+    return world.gloom.filter((g) => g.alive).map((g) => ({ x: g.x, y: g.y, kind: g.dart ? 'dart' : g.chase ? 'chase' : 'gloom' }));
+  },
+  get powerups() {
+    return world.powerups.filter((p) => p.alive).map((p) => ({ x: p.x, y: p.y, kind: p.kind }));
+  },
+  get dawnProgress() {
+    return world.dawnProgress();
+  },
+  get musicPlaying() {
+    return music.playing;
   },
   start: startGame,
   reset: () => world.reset(best),
-  spawnEmberAt: (x, y) => world.spawnEmberAt(x, y),
+  spawnEmberAt: (x, y, golden) => world.spawnEmberAt(x, y, golden),
   spawnGloomAt: (x, y) => world.spawnGloomAt(x, y),
+  spawnPowerupAt: (x, y, kind) => world.spawnPowerupAt(x, y, kind),
+  starfall: () => world.spawnPowerupAt(world.wisp.x, world.wisp.y, 'starfall'),
 };
 
 requestAnimationFrame(frame);

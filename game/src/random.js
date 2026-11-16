@@ -30,6 +30,17 @@ export function makeRandom(seed) {
     pick(values) {
       return values[Math.floor(next() * values.length)];
     },
+    /** One of [value, weight] pairs, by weight. */
+    pickWeighted(pairs) {
+      let total = 0;
+      for (const [, w] of pairs) total += w;
+      let roll = next() * total;
+      for (const [value, w] of pairs) {
+        roll -= w;
+        if (roll <= 0) return value;
+      }
+      return pairs[pairs.length - 1][0];
+    },
     /** True with probability p. */
     chance(p) {
       return next() < p;
