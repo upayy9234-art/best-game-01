@@ -70,6 +70,15 @@ export const POWERUP = {
   starfallPoints: 25,
 };
 
+/** Fever: chain this many embers without dropping the combo and every ember
+ * pays FEVER.multiplier x for FEVER.seconds. The trigger is a multiple of
+ * ten so a long chain re-lights it at x20, x30, ... (see fever.js). */
+export const FEVER = {
+  comboTrigger: 10,
+  seconds: 8,
+  multiplier: 2,
+};
+
 /** Embers gathered to finish a level; level 8 breaks the dawn (the win). */
 export const LEVEL = {
   embersPerLevel: 15,

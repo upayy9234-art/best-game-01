@@ -238,6 +238,14 @@ export function makeRenderer(canvas) {
       ctx.font = `700 15px ${FONT}`;
       ctx.fillText(`★ GOLDEN x${s.goldenTotal}`, 24, s.combo >= 2 ? 156 : 118);
     }
+    // Fever: double points while it burns, with the seconds left.
+    if (s.fever > 0) {
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#ffd76a';
+      ctx.font = `700 15px ${FONT}`;
+      const feverY = (s.combo >= 2 ? 156 : 118) + (s.goldenTotal > 0 ? 22 : 0);
+      ctx.fillText(`★ FEVER x2 — ${Math.ceil(s.fever)}s`, 24, feverY);
+    }
     // Active effects + dash cooldown, bottom left.
     let line = 692;
     ctx.textAlign = 'left';
@@ -310,20 +318,25 @@ export function makeRenderer(canvas) {
     ctx.fillStyle = PALETTE.golden;
     ctx.font = `600 15px ${FONT}`;
     ctx.fillText('Golden embers are worth 5x  ·  Starfall clears the whole sky', FIELD.width / 2, 376);
+    ctx.fillStyle = PALETTE.golden;
+    ctx.font = `600 15px ${FONT}`;
+    ctx.fillText('Chain 10 embers to light Fever — 8 seconds of double points', FIELD.width / 2, 396);
     ctx.fillStyle = PALETTE.muted;
     ctx.font = `500 15px ${FONT}`;
-    ctx.fillText('Move: WASD / arrows or hold the mouse  ·  Dash: SPACE / right-click', FIELD.width / 2, 408);
-    ctx.fillText('Shield, Magnet, Slow-Time and Starfall drift down — catch them  ·  P pause  ·  M mute', FIELD.width / 2, 432);
-    const pulse = 0.7 + 0.3 * Math.sin(time * 3);
+    ctx.fillText('Move: WASD / arrows or hold the mouse  ·  Dash: SPACE / right-click', FIELD.width / 2, 424);
+    ctx.fillText('Shield, Magnet, Slow-Time and Starfall drift down — catch them  ·  P pause  ·  M mute', FIELD.width / 2, 448);
+    // The prompt never fades below 0.85: round 3's cover caught it mid-pulse
+    // and the "press ENTER" line read as dimmed grey. It still breathes.
+    const pulse = 0.85 + 0.15 * Math.sin(time * 3);
     ctx.globalAlpha = pulse;
     ctx.fillStyle = '#fff6c9';
     ctx.font = `700 22px ${FONT}`;
-    ctx.fillText('Press ENTER or click to begin', FIELD.width / 2, 486);
+    ctx.fillText('Press ENTER or click to begin', FIELD.width / 2, 492);
     ctx.globalAlpha = 1;
     if (s.best > 0) {
       ctx.fillStyle = PALETTE.muted;
       ctx.font = `600 15px ${FONT}`;
-      ctx.fillText(`Best score: ${s.best}`, FIELD.width / 2, 524);
+      ctx.fillText(`Best score: ${s.best}`, FIELD.width / 2, 528);
     }
     void world;
   }

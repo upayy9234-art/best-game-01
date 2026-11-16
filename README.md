@@ -10,7 +10,10 @@ every light. Gather falling embers to build a combo, chase the rare golden
 embers worth 5x, dodge the gloom orbs (and the chasers and darts that appear as
 you level up), catch Shield / Magnet / Slow-Time / Starfall power-ups — Starfall
 clears the whole sky of gloom — dash through danger, and reach level 8 to break
-the dawn, then keep drifting in endless mode. The sky itself brightens as you
+the dawn, then keep drifting in endless mode. Chain 10 embers without dropping
+the combo to light Fever: 8 seconds of double points, re-lit at every further
+multiple of 10 — the run's risk/reward choice is whether to chase the next
+ember and keep Fever burning. The sky itself brightens as you
 climb: stars fade, the moon sets, and the sun rises over the lantern-lit hills
 when the dawn breaks. Reaching level 4 with a life missing earns one back
 (Dawn's Blessing).

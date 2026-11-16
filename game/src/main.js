@@ -232,6 +232,9 @@ window.__lumen = {
   get dawnProgress() {
     return world.dawnProgress();
   },
+  get fever() {
+    return world.state.fever;
+  },
   get musicPlaying() {
     return music.playing;
   },

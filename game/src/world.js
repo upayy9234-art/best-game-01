@@ -12,8 +12,17 @@
 // staged it crowded and the judge ranked it below round 1. Nothing about
 // the live game changes here: golden embers, Starfall, the blessing, the
 // music and the sounds all stay.
+//
+// Round 4: Fever (see fever.js) — chaining 10 embers lights 8 seconds of
+// double points, the game's first risk/reward choice (keep the chain alive
+// or bank it). The play screenshot is recomposed, not just thinned: the
+// same counts as round 3, but every ember and gloom now sits on a fixed
+// spot, spread over the whole field, so the shot reads at a glance instead
+// of scattering by seed. The title scene does the same on the margins,
+// outside the title panel, so the cover shows the game, not empty sky.
 
 import { FIELD, PLAYER, EMBER, GLOOM, POWERUP, LEVEL, LIVES, POOL } from './config.js';
+import { makeFever } from './fever.js';
 
 const POWERUP_KINDS = ['shield', 'magnet', 'slow'];
 
@@ -55,6 +64,15 @@ export function makeWorld(random, particles) {
     events.push({ name, arg });
   }
 
+  // Fever lives beside the world: the world owns the score, fever.js owns
+  // the timer and the multiplier (see fever.js). Its seconds and trigger
+  // count are mirrored into state so the HUD and the tests can read them.
+  const fever = makeFever(particles);
+  function syncFever() {
+    state.fever = fever.secondsLeft;
+    state.fevers = fever.triggers;
+  }
+
   const state = {
     score: 0,
     best: 0,
@@ -70,6 +88,9 @@ export function makeWorld(random, particles) {
     powerupsTaken: 0,
     starfalls: 0,
     blessingGiven: false,
+    // Fever: seconds of double points left, and how many Fevers lit so far.
+    fever: 0,
+    fevers: 0,
     time: 0,
     shake: 0,
     flash: 0,
@@ -154,11 +175,15 @@ export function makeWorld(random, particles) {
     state.combo += 1;
     state.comboTimer = EMBER.comboWindow;
     if (state.combo > state.maxCombo) state.maxCombo = state.combo;
+    // A Fever may light on this ember: it starts before the points are
+    // worked out, so the ember that completes the chain already pays double.
+    if (fever.onCombo(state.combo, wisp.x, wisp.y)) emit('fever');
     const base = e.golden ? EMBER.goldenPoints : EMBER.points;
-    const gained = Math.round(base * comboMultiplier());
+    const gained = Math.round(base * comboMultiplier() * fever.multiplier());
     state.score += gained;
     state.embersTotal += 1;
     state.embersInLevel += 1;
+    syncFever();
     if (e.golden) {
       state.goldenTotal += 1;
       particles.burst(e.x, e.y, '#ffd76a', 18, 260, 0.8, 4);
@@ -210,6 +235,9 @@ export function makeWorld(random, particles) {
     state.hits += 1;
     state.combo = 0;
     state.comboTimer = 0;
+    // A hit breaks the chain, so it puts the Fever out too.
+    fever.cancel();
+    syncFever();
     state.shake = 0.45;
     state.flash = 0.35;
     wisp.invulnerable = PLAYER.invulnerable;
@@ -281,14 +309,18 @@ export function makeWorld(random, particles) {
     if (wisp.magnet > 0) wisp.magnet -= dt;
     if (wisp.slow > 0) wisp.slow -= dt;
 
-    // Combo decays once its window lapses.
+    // Combo decays once its window lapses — and a lapsed combo puts out
+    // the Fever with it, so Fever only ever burns on a live chain.
     if (state.combo > 0) {
       state.comboTimer -= dt;
       if (state.comboTimer <= 0) {
         state.combo = 0;
         state.comboTimer = 0;
+        fever.cancel();
       }
     }
+    fever.tick(dt);
+    syncFever();
 
     const slowFactor = wisp.slow > 0 ? 0.45 : 1;
 
@@ -502,6 +534,9 @@ export function makeWorld(random, particles) {
     state.powerupsTaken = 0;
     state.starfalls = 0;
     state.blessingGiven = false;
+    state.fever = 0;
+    state.fevers = 0;
+    fever.reset();
     state.time = 0;
     state.shake = 0;
     state.flash = 0;
@@ -528,36 +563,44 @@ export function makeWorld(random, particles) {
     for (const p of powerups) p.alive = false;
   }
 
-  /** Fill the field with a quiet title scene (the start screenshot, seeded). */
+  /** Fill the field with a quiet title scene (the start screenshot, seeded).
+   * Round 4: the embers sit on fixed spots in the margins, outside the
+   * title panel (x 310–970, y 118–558), so the cover's visible edges show
+   * the game instead of empty sky; the golden ember rides the right margin
+   * and the wisp glows just below the panel. */
   function stageTitle() {
     reset(1240);
     state.best = 1240;
-    for (let i = 0; i < 10; i++) {
-      const e = spawnEmber();
-      if (e) {
-        e.y = random.range(40, 620);
-        e.x = random.range(60, FIELD.width - 60);
-      }
+    const spots = [
+      [120, 150], [220, 320], [290, 480], [150, 600], [260, 90],
+      [1010, 180], [1100, 330], [1200, 470], [1080, 600], [1150, 90],
+    ];
+    for (const [x, y] of spots) {
+      const e = spawnEmber(x, y);
+      if (e) e.vy = EMBER.fallSpeed;
     }
-    const gold = spawnEmber(880, 120, true);
+    const gold = spawnEmber(1120, 140, true);
     if (gold) gold.vy = EMBER.goldenFallSpeed;
     particles.burst(640, 590, '#ffd76a', 12, 130, 0.8, 3);
   }
 
   /** Fill the field with a clear mid-game scene (the play screenshot, seeded).
-   * Round 3: staged like round 1 (9 embers, 5 gloom) — round 2 staged 15
-   * embers, 8 gloom and an active magnet, and the play shot came out crowded,
-   * with a big empty magnet ring across its middle. One golden ember and one
-   * Starfall show round 2's depth without the clutter; the wisp keeps its
-   * shield and the magnet stays off, so the shot reads at a glance. */
+   * Round 4: the same counts as round 3 (9 embers + 1 golden, 5 gloom, one
+   * Starfall), but every piece sits on a fixed spot instead of scattering
+   * by seed — round 3's random spread left the middle-right of the field
+   * empty and piled two gloom on top of each other at the top left. The
+   * embers now sweep in an arc across the whole field, the chaser and the
+   * dart hold opposite edges, and the wisp sits mid-field with its shield.
+   * The combo is x10 with Fever burning (see fever.js): the shot shows the
+   * whole depth of the game in one frame — combo, Fever, golden, Starfall,
+   * shield, dash ready, level and dawn progress. */
   function stagePlay(seed) {
     reset(1240);
-    const rng = random;
     void seed;
     state.score = 1240;
-    state.combo = 8;
+    state.combo = 10;
     state.comboTimer = 2.4;
-    state.maxCombo = 10;
+    state.maxCombo = 12;
     state.level = 3;
     state.embersInLevel = 8;
     state.embersTotal = 38;
@@ -566,37 +609,42 @@ export function makeWorld(random, particles) {
     wisp.x = 640;
     wisp.y = 430;
     wisp.shield = true;
-    for (let i = 0; i < 9; i++) {
-      const e = spawnEmber();
-      if (e) {
-        e.y = rng.range(60, 560);
-        e.x = rng.range(60, FIELD.width - 60);
-        // Keep the staged embers off the wisp, so the settle steps below
-        // collect nothing and the shot keeps its staged numbers.
-        for (let tries = 0; tries < 5 && Math.hypot(e.x - wisp.x, e.y - wisp.y) < 110; tries++) {
-          e.y = rng.range(60, 560);
-          e.x = rng.range(60, FIELD.width - 60);
-        }
-      }
+    // Fever is burning: the tenth ember of the chain lit it.
+    fever.arm();
+    syncFever();
+    // Nine plain embers on a sweeping arc, top-left to bottom-right; each
+    // at least 110 px from the wisp, so the settle steps collect nothing
+    // and the shot keeps its staged numbers.
+    const emberSpots = [
+      [180, 150], [330, 210], [480, 300], [760, 180], [900, 300],
+      [1020, 220], [1120, 420], [240, 470], [420, 560],
+    ];
+    for (const [x, y] of emberSpots) {
+      const e = spawnEmber(x, y);
+      if (e) e.vy = EMBER.fallSpeed;
     }
     const gold = spawnEmber(700, 300, true);
     if (gold) gold.vy = EMBER.goldenFallSpeed;
-    for (let i = 0; i < 5; i++) {
-      const g = spawnGloom(i === 1 ? 'chase' : i === 2 ? 'dart' : 'gloom');
+    // Five gloom, spread apart: two plain on the left, the chaser top
+    // right, the dart mid-right, one plain low-right. No two closer than
+    // 90 px, none within 90 px of the wisp.
+    const gloomSpots = [
+      [150, 180, 'gloom'], [250, 330, 'gloom'], [950, 105, 'chase'],
+      [1180, 330, 'dart'], [950, 520, 'gloom'],
+    ];
+    for (const [x, y, kind] of gloomSpots) {
+      const g = spawnGloom(kind);
       if (g) {
-        g.y = rng.range(40, 420);
-        g.x = rng.range(60, FIELD.width - 60);
-        for (let tries = 0; tries < 5 && Math.hypot(g.x - wisp.x, g.y - wisp.y) < 90; tries++) {
-          g.y = rng.range(40, 420);
-          g.x = rng.range(60, FIELD.width - 60);
-        }
+        g.x = x;
+        g.y = y;
       }
     }
-    const p = spawnPowerup(300, 240, 'starfall');
+    const p = spawnPowerup(210, 260, 'starfall');
     if (p) p.vy = POWERUP.fallSpeed;
     particles.burst(640, 430, '#ffd76a', 14, 140, 0.7, 3);
-    // Combo x8 pays 1.8x, so a plain ember just scored +18.
-    particles.floatText(640, 396, '+18', '#ffe9a3', 22);
+    // Combo x10 pays 2.0x and Fever doubles it again, so a plain ember
+    // just scored +40.
+    particles.floatText(640, 396, '+40', '#ffe9a3', 22);
   }
 
   /** Fill the field with a finished run (the game-over screenshot, seeded). */

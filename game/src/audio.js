@@ -10,6 +10,7 @@ const NOTES = {
   shield: [1046.5, 783.99],
   starfall: [523.25, 659.25, 783.99, 1046.5, 1318.5],
   blessing: [783.99, 987.77, 1174.66],
+  fever: [1046.5, 1318.5, 1567.98, 2093],
   hit: [160, 110],
   dash: [320, 640],
   level: [523.25, 659.25, 783.99, 1046.5],
@@ -111,6 +112,11 @@ export function makeAudio() {
     blessing() {
       if (!ensure()) return;
       NOTES.blessing.forEach((f, i) => tone(f, i * 0.1, 0.26, 'triangle', 0.9));
+    },
+    fever() {
+      if (!ensure()) return;
+      NOTES.fever.forEach((f, i) => tone(f, i * 0.05, 0.24, 'triangle', 0.9));
+      noise(0, 0.3, 5200, 0.35);
     },
     hit() {
       if (!ensure()) return;
